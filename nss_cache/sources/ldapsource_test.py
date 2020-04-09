@@ -528,7 +528,7 @@ class TestLdapSource(mox.MoxTestBase):
     config = dict(self.config)
     config['rfc2307bis'] = 1
     config["nested_groups"] = 1
-    attrlist = ['cn', 'gidNumber', 'member',
+    attrlist = ['dn', 'cn', 'gidNumber', 'member',
                 'modifyTimestamp']
 
     mock_rlo = self.mox.CreateMock(ldap.ldapobject.ReconnectLDAPObject)
@@ -564,9 +564,101 @@ class TestLdapSource(mox.MoxTestBase):
     datadict = {i.name: i for i in data}
     self.assertIn("child", datadict)
     self.assertIn("testgroup", datadict)
-    self.assertEqual(len(datadict["testgroup"].members), 7)
+    self.assertEqual(len(datadict["testgroup"].members), 6)
     self.assertEqual(len(datadict["child"].members), 3)
     self.assertIn("newperson", datadict["testgroup"].members)
+
+    def testGetGroupNestedEmptyGroup(self):
+        test_posix_group = ('cn=testgroup,ou=groups,dc=example,dc=com', {
+            'sambaSID': ['S-1-5-21-2127521184-1604012920-1887927527-72713'],
+            'gidNumber': [1000],
+            'cn': ['testgroup'],
+            'member': [
+                'uid=testguy,ou=people,dc=example,dc=com',
+                'uid=fooguy,ou=people,dc=example,dc=com',
+                'uid=robotguy,ou=robots,dc=example,dc=com',
+                'cn=child,ou=groups,dc=example,dc=com'
+            ],
+            'modifyTimestamp': ['20070227012807Z']
+        })
+        test_child_group = ('cn=child,ou=groups,dc=example,dc=com', {
+            'sambaSID': ['S-1-5-21-2127521184-1604012920-1887927527-72714'],
+            'gidNumber': [1001],
+            'cn': ['child'],
+            'member': [
+                'uid=newperson,ou=people,dc=example,dc=com',
+                'uid=overlapperson,ou=people,dc=example,dc=com',
+                'uid=barperson,ou=people,dc=example,dc=com',
+                'cn=grandchild,ou=groups,dc=example,dc=com',
+            ],
+            'modifyTimestamp': ['20070227012807Z']
+        })
+        test_grandchild_group = ('cn=grandchild,ou=groups,dc=example,dc=com', {
+            'sambaSID': ['S-1-5-21-2127521184-1604012920-1887927527-72715'],
+            'gidNumber': [1002],
+            'cn': ['grandchild'],
+            'member': [
+                'uid=anotherperson,ou=people,dc=example,dc=com',
+                'uid=overlapperson,ou=people,dc=example,dc=com',
+                'cn=empty,ou=groups,dc=example,dc=com',
+            ],
+            'modifyTimestamp': ['20070227012807Z']
+        })
+        test_empty_group = ('cn=empty,ou=groups,dc=example,dc=com', {
+            'sambaSID': ['S-1-5-21-2127521184-1604012920-1887927527-72716'],
+            'gidNumber': [1003],
+            'cn': ['empty'],
+            'member': [],
+            'modifyTimestamp': ['20070227012807Z']
+        })
+        config = dict(self.config)
+        config['rfc2307bis'] = 1
+        config["nested_groups"] = 1
+        config['use_rid'] = 1
+        attrlist = [
+            'dn', 'cn', 'uid', 'gidNumber', 'member', 'sambaSID', 'modifyTimestamp'
+        ]
+
+        mock_rlo = self.mox.CreateMock(ldap.ldapobject.ReconnectLDAPObject)
+        mock_rlo.simple_bind_s(cred='TEST_BIND_PASSWORD', who='TEST_BIND_DN')
+        mock_rlo.search_ext(base='TEST_BASE',
+                            filterstr='TEST_FILTER',
+                            scope=ldap.SCOPE_ONELEVEL,
+                            attrlist=mox.SameElementsAs(attrlist),
+                            serverctrls=mox.Func(
+                                self.compareSPRC())).AndReturn('TEST_RES')
+
+        mock_rlo.result3('TEST_RES', all=0, timeout='TEST_TIMELIMIT').AndReturn(
+            (ldap.RES_SEARCH_ENTRY, [test_posix_group,
+                                     test_child_group,
+                                     test_grandchild_group,
+                                     test_empty_group], None, []))
+        mock_rlo.result3('TEST_RES', all=0, timeout='TEST_TIMELIMIT').AndReturn(
+            (ldap.RES_SEARCH_RESULT, None, None, []))
+
+        self.mox.StubOutWithMock(ldap, 'ldapobject')
+        ldap.ldapobject.ReconnectLDAPObject(
+            uri='TEST_URI',
+            retry_max=TEST_RETRY_MAX,
+            retry_delay=TEST_RETRY_DELAY).AndReturn(mock_rlo)
+
+        self.mox.ReplayAll()
+        source = ldapsource.LdapSource(config)
+        data = source.GetGroupMap()
+
+        self.assertEqual(4, len(data))
+        datadict = {i.name: i for i in data}
+        self.assertIn("child", datadict)
+        self.assertIn("grandchild", datadict)
+        self.assertIn("testgroup", datadict)
+        self.assertIn("empty", datadict)
+        self.assertEqual(len(datadict["testgroup"].members), 7)
+        self.assertEqual(len(datadict["child"].members), 4)
+        self.assertEqual(len(datadict["grandchild"].members), 2)
+        self.assertEqual(len(datadict["empty"].members), 0)
+        self.assertIn("newperson", datadict["testgroup"].members)
+        self.assertIn("anotherperson", datadict["testgroup"].members)
+        self.assertIn("anotherperson", datadict["child"].members)
 
   def testGetGroupLoop(self):
     test_posix_group = ('cn=test,ou=Group,dc=example,dc=com',
@@ -594,7 +686,7 @@ class TestLdapSource(mox.MoxTestBase):
     config = dict(self.config)
     config['rfc2307bis'] = 1
     config["nested_groups"] = 1
-    attrlist = ['cn', 'gidNumber', 'member',
+    attrlist = ['dn', 'cn', 'gidNumber', 'member',
                 'modifyTimestamp']
 
     mock_rlo = self.mox.CreateMock(ldap.ldapobject.ReconnectLDAPObject)
@@ -632,7 +724,7 @@ class TestLdapSource(mox.MoxTestBase):
     datadict = {i.name: i for i in data}
     self.assertIn("child", datadict)
     self.assertIn("testgroup", datadict)
-    self.assertEqual(len(datadict["testgroup"].members), 7)
+    self.assertEqual(len(datadict["testgroup"].members), 6)
     self.assertEqual(len(datadict["child"].members), 3)
     self.assertIn("newperson", datadict["testgroup"].members)
 

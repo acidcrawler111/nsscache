@@ -689,6 +689,8 @@ class GroupUpdateGetter(UpdateGetter):
       self.attrs = ['cn', 'gidNumber', 'memberUid']
     if 'groupregex' in conf:
       self.groupregex = re.compile(self.conf['groupregex'])
+    if conf.get('nested_groups'):
+      self.attrs.append('dn')
     self.essential_fields = ['cn']
     self.log = logging.getLogger(self.__class__.__name__)
 
@@ -700,13 +702,16 @@ class GroupUpdateGetter(UpdateGetter):
     """Transforms a LDAP posixGroup object into a group(5) entry."""
 
     gr = group.GroupMapEntry()
-
     gr.name = obj['cn'][0]
+    if 'dn' in obj:
+      gr.dn = obj['dn']
     # group passwords are deferred to gshadow
     gr.passwd = '*'
     base = self.conf.get("base")
+    nested_groups = self.conf.get('nested_groups')
     members = []
     group_members = []
+    distinguished_names = {}
     if 'memberUid' in obj:
       if hasattr(self, 'groupregex'):
         members.extend(''.join([x for x in self.groupregex.findall(obj['memberUid'])]))
@@ -714,10 +719,13 @@ class GroupUpdateGetter(UpdateGetter):
         members.extend(obj['memberUid'])
     elif 'member' in obj:
       for member_dn in obj['member']:
-        member_uid = member_dn.split(',')[0].split('=')[1]
+        if member_dn:
+          member_uid = member_dn.split(',')[0].split('=')[1]
         # Note that there is not currently a way to consistently distinguish
         # a group from a person
         group_members.append(member_uid)
+        if nested_groups:
+          distinguished_names[member_uid] = member_dn
         if hasattr(self, 'groupregex'):
           members.append(''.join([x for x in self.groupregex.findall(member_uid)]))
         else:
@@ -730,6 +738,8 @@ class GroupUpdateGetter(UpdateGetter):
     gr.gid = int(obj['gidNumber'][0])
     gr.members = members
     gr.groupmembers = group_members
+    if nested_groups:
+      gr.distinguished_names = distinguished_names
 
     return gr
 
@@ -753,21 +763,18 @@ class GroupUpdateGetter(UpdateGetter):
     
     def _expand_members(obj, visited=None):
       """Expand all subgroups recursively"""
-      for member_name in obj.groupmembers:
-        if member_name in _group_map and member_name not in visited:
-          gmember = _group_map[member_name]
-          for member in gmember.members:
-            if member not in obj.members:
-              obj.members.append(member)
-          for submember_name in gmember.groupmembers:
-            if submember_name in _group_map and submember_name not in visited:
-              visited.append(submember_name)
-              _expand_members(_group_map[submember_name], visited)
+      for member_name, member_dn in obj.distinguished_names.items():
+        if member_dn not in _group_map:
+          yield member_name
+        elif member_dn not in visited:
+          visited.append(member_dn)
+          yield from _expand_members(_group_map[member_dn], visited)
     
     if self.conf.get("nested_groups"):
+      _group_map = {i.dn: i for i in data_map}
       self.log.info("Expanding nested groups")
       for gr in data_map:
-        _expand_members(gr, [gr.name])
+        gr.members = list(set(_expand_members(gr, [gr.dn])))
 
 
 class ShadowUpdateGetter(UpdateGetter):
