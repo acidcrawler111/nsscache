@@ -328,11 +328,11 @@ class NssDbPasswdHandler(NssDbCache):
         # Write to makedb with each key
         if target:
             target.write(
-                ('.%s %s\n' % (entry.name, password_entry)).encode('ascii'))
+                ('.%s %s\n' % (entry.name, password_entry)).encode('utf-8'))
             target.write(
-                ('=%d %s\n' % (entry.uid, password_entry)).encode('ascii'))
+                ('=%d %s\n' % (entry.uid, password_entry)).encode('utf-8'))
             target.write(('0%d %s\n' %
-                          (enumeration_index, password_entry)).encode('ascii'))
+                          (enumeration_index, password_entry)).encode('utf-8'))
 
     def IsMapPrimaryKey(self, key):
         """Defines the 'primary' key for this map.
@@ -430,10 +430,10 @@ class NssDbGroupHandler(NssDbCache):
             entry.members))
         # Write to makedb with each key
         if target:
-            target.write(('.%s %s\n' % (entry.name, grent)).encode('ascii'))
-            target.write(('=%d %s\n' % (entry.gid, grent)).encode('ascii'))
+            target.write(('.%s %s\n' % (entry.name, grent)).encode('utf-8'))
+            target.write(('=%d %s\n' % (entry.gid, grent)).encode('utf-8'))
             target.write(
-                ('0%d %s\n' % (enumeration_index, grent)).encode('ascii'))
+                ('0%d %s\n' % (enumeration_index, grent)).encode('utf-8'))
 
     def IsMapPrimaryKey(self, key):
         """Defines the 'primary' key for a nss_db group.db map.
@@ -527,9 +527,9 @@ class NssDbShadowHandler(NssDbCache):
         # Write to makedb with each key
         if target:
             target.write(
-                ('.%s %s\n' % (entry.name, shadow_entry)).encode('ascii'))
+                ('.%s %s\n' % (entry.name, shadow_entry)).encode('utf-8'))
             target.write(('0%d %s\n' %
-                          (enumeration_index, shadow_entry)).encode('ascii'))
+                          (enumeration_index, shadow_entry)).encode('utf-8'))
 
     def IsMapPrimaryKey(self, key):
         """Defines the 'primary' key for a nss_db shadow.db map.
